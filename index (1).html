@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sopa da Caridade – Lista de itens</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🍲</text></svg>">
+<style>
+:root{--bg:#faf6ef;--card:#fff;--tx:#2b2620;--mut:#7a6f62;--ac:#b5541f;--ok:#2e7d4f;--okbg:#e6f3ea;--bd:#e6dccd}
+@media (prefers-color-scheme:dark){:root{--bg:#1d1a16;--card:#27231e;--tx:#f1ebe1;--mut:#a89c8c;--ac:#e58a52;--ok:#6fcf97;--okbg:#22352a;--bd:#3a342c;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:720px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:1.5rem;margin:0 0 4px}
+.sub{color:var(--mut);margin:0 0 16px}
+.me{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.me label{font-weight:600;flex:1 1 100%}
+input[type=text]{flex:1;min-width:0;padding:10px;border:1px solid var(--bd);border-radius:8px;background:var(--bg);color:var(--tx);font:inherit}
+.bar{height:10px;background:var(--bd);border-radius:99px;overflow:hidden;margin:16px 0 4px}
+.bar i{display:block;height:100%;width:0;background:var(--ok);transition:width .3s}
+.cnt{font-size:.9rem;color:var(--mut);margin-bottom:8px}
+h2{font-size:1.05rem;margin:22px 0 8px;color:var(--ac)}
+.row{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.row.done{background:var(--okbg)}
+.info{flex:1;min-width:0}
+.nm{font-weight:600}
+.q{font-size:.88rem;color:var(--mut)}
+.who{font-size:.9rem;color:var(--ok);font-weight:600}
+button{font:inherit;border:0;border-radius:8px;padding:9px 14px;cursor:pointer;background:var(--ac);color:#fff;font-weight:600}
+button.ghost{background:transparent;color:var(--mut);border:1px solid var(--bd)}
+.add{display:flex;gap:8px;margin-top:24px}
+.msg{color:var(--mut);font-size:.9rem;margin:8px 0}
+</style>
+</head>
+<body>
+<main>
+<h1>🍲 Sopa da Caridade</h1>
+<p class="sub">Escolha o que você pode levar. Toque em “Eu levo” e pronto!</p>
+
+<div class="me">
+<label for="nome">Seu nome</label>
+<input type="text" id="nome" placeholder="Ex.: Maria" maxlength="40" autocomplete="name">
+</div>
+
+<div class="bar"><i id="bar"></i></div>
+<div class="cnt" id="cnt">Carregando…</div>
+<div class="msg" id="msg"></div>
+<div id="lista"></div>
+<div id="seedbox"></div>
+
+<div class="add">
+<input type="text" id="novo" placeholder="Sugerir outro item (ex.: Pão, 20 unidades)" maxlength="80">
+<button id="addbtn">Adicionar</button>
+</div>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getFirestore, collection, doc, onSnapshot, updateDoc, setDoc, writeBatch }
+  from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ====== COLE AQUI A CONFIGURAÇÃO DO SEU PROJETO FIREBASE ====== */
+const firebaseConfig = {
+  apiKey: "COLE_AQUI",
+  authDomain: "COLE_AQUI",
+  projectId: "COLE_AQUI",
+  storageBucket: "COLE_AQUI",
+  messagingSenderId: "COLE_AQUI",
+  appId: "COLE_AQUI"
+};
+/* =============================================================== */
+
+const $ = id => document.getElementById(id);
+const nome = $('nome');
+let items = [];
+try { nome.value = localStorage.getItem('sopa_nome') || ''; } catch (e) {}
+nome.addEventListener('input', () => { try { localStorage.setItem('sopa_nome', nome.value); } catch (e) {} });
+const meu = () => nome.value.trim();
+
+const INICIAL = [
+  ["Mantimentos","Macarrão (parafuso ou letrinhas)","5 pacotes de 500 g"],
+  ["Mantimentos","Arroz","2 kg"],
+  ["Mantimentos","Feijão","2 kg"],
+  ["Mantimentos","Óleo de soja","2 garrafas"],
+  ["Mantimentos","Sal","2 pacotes"],
+  ["Mantimentos","Caldo de legumes ou carne","10 tabletes"],
+  ["Legumes e verduras","Batata","5 kg"],
+  ["Legumes e verduras","Cenoura","3 kg"],
+  ["Legumes e verduras","Chuchu e abóbora","3 kg"],
+  ["Legumes e verduras","Cebola e alho","2 kg de cebola, 3 cabeças de alho"],
+  ["Legumes e verduras","Cheiro-verde e salsinha","10 maços"],
+  ["Proteínas","Carne ou frango (ou proteína de soja)","5 kg"],
+  ["Acompanhamentos","Pão","1 por pessoa atendida"],
+  ["Descartáveis","Copos descartáveis","100 unidades"],
+  ["Descartáveis","Colheres descartáveis","100 unidades"],
+  ["Descartáveis","Guardanapos","2 pacotes"],
+  ["Utensílios","Panelão grande emprestado","1 ou 2"],
+  ["Utensílios","Gás de cozinha / botijão","1"],
+  ["Voluntários","Ajuda para cozinhar e servir","Anote o horário que pode"]
+];
+
+if (firebaseConfig.apiKey === "COLE_AQUI") {
+  $('cnt').textContent = 'Falta colar a configuração do Firebase no arquivo index.html.';
+} else {
+  const db = getFirestore(initializeApp(firebaseConfig));
+  const col = collection(db, 'items');
+
+  onSnapshot(col, snap => {
+    items = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
+    render();
+  }, () => { $('cnt').textContent = 'Não foi possível carregar a lista.'; });
+
+  function render() {
+    const total = items.length, ok = items.filter(i => i.quem).length;
+    $('bar').style.width = total ? (ok / total * 100) + '%' : '0';
+    $('cnt').textContent = total ? `${ok} de ${total} itens já têm responsável` : 'Nenhum item na lista ainda.';
+    const sb = $('seedbox'); sb.textContent = '';
+    if (!total) {
+      const b = document.createElement('button'); b.textContent = 'Criar lista inicial';
+      b.onclick = async () => {
+        const w = writeBatch(db);
+        INICIAL.forEach((x, n) => w.set(doc(col, 'i' + String(n + 1).padStart(2, '0')),
+          { cat: x[0], nome: x[1], qtd: x[2], ordem: n + 1, quem: '' }));
+        await w.commit();
+      };
+      sb.appendChild(b);
+    }
+    const cats = {}, ordem = [];
+    items.forEach(i => { const c = i.cat || 'Outros'; if (!cats[c]) { cats[c] = []; ordem.push(c); } cats[c].push(i); });
+    const box = $('lista'); box.textContent = '';
+    ordem.forEach(c => {
+      const h = document.createElement('h2'); h.textContent = c; box.appendChild(h);
+      cats[c].forEach(i => {
+        const r = document.createElement('div'); r.className = 'row' + (i.quem ? ' done' : '');
+        const inf = document.createElement('div'); inf.className = 'info';
+        const n = document.createElement('div'); n.className = 'nm'; n.textContent = i.nome; inf.appendChild(n);
+        if (i.qtd) { const q = document.createElement('div'); q.className = 'q'; q.textContent = i.qtd; inf.appendChild(q); }
+        if (i.quem) { const w = document.createElement('div'); w.className = 'who'; w.textContent = '✓ ' + i.quem; inf.appendChild(w); }
+        r.appendChild(inf);
+        const b = document.createElement('button');
+        if (!i.quem) { b.textContent = 'Eu levo'; b.onclick = () => claim(i, meu()); }
+        else { b.textContent = 'Liberar'; b.className = 'ghost'; b.onclick = () => claim(i, ''); }
+        r.appendChild(b); box.appendChild(r);
+      });
+    });
+  }
+
+  function claim(i, quem) {
+    if (!meu() && quem !== '') { $('msg').textContent = 'Digite seu nome primeiro.'; nome.focus(); return; }
+    $('msg').textContent = '';
+    updateDoc(doc(col, i.id), { quem }).catch(() => { $('msg').textContent = 'Não foi possível salvar. Tente de novo.'; });
+  }
+
+  $('addbtn').onclick = () => {
+    const v = $('novo').value.trim(); if (!v) return;
+    setDoc(doc(col, 'x' + Date.now()), { nome: v, qtd: '', cat: 'Sugestões', ordem: 9999, quem: meu() })
+      .then(() => { $('novo').value = ''; })
+      .catch(() => { $('msg').textContent = 'Não foi possível adicionar.'; });
+  };
+}
+</script>
+</body>
+</html>
